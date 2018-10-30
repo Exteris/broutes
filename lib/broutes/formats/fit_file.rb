@@ -28,7 +28,12 @@ module Broutes::Formats
     end
 
     def convert_position(value)
-      (8.381903171539307e-08 * value).round(5)
+      val = (8.381903171539307e-08 * value).round(5)
+      if val == 180.0 # special value for some watches
+        return nil
+      else
+        return val
+      end
     end
 
     def record_time(record)

@@ -47,24 +47,23 @@ module Broutes
     def add_point(args)
       point = GeoPoint.new(args)
       if @start_point
-        if point.distance
-          @total_distance = point.distance
-        else
-          if distance = Maths.haversine_distance(@end_point, point)
-            @total_distance += distance
-          end
+        if distance = Maths.haversine_distance(@end_point, point)
+          @total_distance += distance
         end
 
         @total_time = point.time - @start_point.time if point.time
       else
         @start_point = point
-        @total_distance = point.distance || 0
+        @end_point = point
+        @total_distance = 0
       end
 
       point.distance = @total_distance
       process_elevation_delta(@end_point, point)
 
-      @end_point = point
+      if point.has_location?
+        @end_point = point
+      end
       get_points << point
     end
 
