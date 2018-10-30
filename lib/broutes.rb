@@ -17,6 +17,10 @@ module Broutes
     route
   end
 
+  def self.from_hash(h)
+    GeoRoute.new h
+  end
+
   class << self
     attr_writer :logger
 
