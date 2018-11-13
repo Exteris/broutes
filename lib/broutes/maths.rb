@@ -21,6 +21,24 @@ module Broutes
     
         EARTH_RADIUS * c
       end
+
+      # Calculate the median of arr
+      # If the length is even, take the mean of the two medians
+      def median(arr)
+        sorted = arr.sort
+        len = sorted.length
+        m1 = sorted[(len - 1) / 2] 
+        m2 = sorted[len / 2]
+        if m1.nil? or m2.nil?
+          return nil
+        else
+          return (m1 + m2) / 2.0
+        end
+      end
+
+      def MAD(arr, m)
+        median(arr.compact.map{|a| (a - m).abs})
+      end
     end
   end
 end

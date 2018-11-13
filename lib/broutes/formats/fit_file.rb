@@ -29,11 +29,14 @@ module Broutes::Formats
 
     def convert_position(value)
       val = (8.381903171539307e-08 * value).round(5)
+<<<<<<< Updated upstream
       if val == 180.0 # special value for some watches
         return nil
       else
         return val
       end
+=======
+>>>>>>> Stashed changes
     end
 
     def record_time(record)

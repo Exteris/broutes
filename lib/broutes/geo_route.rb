@@ -46,6 +46,7 @@ module Broutes
 
     def add_point(args)
       point = GeoPoint.new(args)
+<<<<<<< Updated upstream
       if @start_point
         if distance = Maths.haversine_distance(@end_point, point)
           @total_distance += distance
@@ -60,6 +61,8 @@ module Broutes
 
       point.distance = @total_distance
       process_elevation_delta(@end_point, point)
+=======
+>>>>>>> Stashed changes
 
       if point.has_location?
         @end_point = point
@@ -227,6 +230,115 @@ module Broutes
     # Returns Integer calories, 0 if no calories on laps or no laps on the route.
     def total_calories
       laps.map { |l| l.calories }.inject { |sum, l| sum + l } || 0
+    end
+
+    # Public: Clear outlying points (gps only for now)
+    # This uses the median and the median absolute deviation to remove points
+    # more than 5 MAD's away from the median point.
+    # Removed points are set to nil
+    # This is the same algorithm as used in GPXsee (https://github.com/tumic0/GPXSee/blob/master/src/data/track.cpp)
+    # This does nothing if acceleration is all empty (i.e. if interpolate_speed_acceleration has not been called)
+    # It removes the acceleration, speed and gps coordinates of that point
+    #
+    # Examples
+    #   @route.clear_outliers!
+    #
+    # Returns nil
+    def clear_outliers!
+      acceleration = get_points.map(&:acceleration).compact
+      m = Maths.median(acceleration)
+      mad = Maths.MAD(acceleration, m)
+      get_points.map!.with_index do |p, i|
+        if p.acceleration.nil? or ((0.6745 * (p.acceleration - m)) / mad).abs > 5
+          p.acceleration = nil
+          p.speed = nil
+          p.lat = nil
+          p.lon = nil
+          p.elevation = nil
+          p.distance = nil
+        end
+
+        p
+      end
+      nil
+    end
+
+    # Public: Calculate the speed and acceleration from the GPS data
+    # This deletes any existing speed and acceleration data!
+    #
+    # Examples
+    #   @route.calculate_speed_acceleration!
+    #
+    # Returns nil
+    def calculate_speed_acceleration!(overwrite_speed=true)
+      i_last_proper = get_points.index(&:has_location?)
+      if i_last_proper.nil? # no location data
+        return nil
+      end
+      (0..(i_last_proper-1)).each do |i|
+        get_points[i].speed = nil
+        get_points[i].acceleration = nil
+      end
+      get_points[i_last_proper].speed = 0
+      get_points[i_last_proper].acceleration = 0
+
+      (i_last_proper+1..get_points.length-1).each do |i|
+        p = get_points[i]
+        p_prev = get_points[i_last_proper]
+        if not p_prev.has_location?
+          puts 'ERROR', i
+        end
+        if ds = Maths.haversine_distance(p, p_prev)
+          dt = p.time.to_f - p_prev.time.to_f
+
+          if dt < 1e-3
+            p.speed = p_prev.speed if overwrite_speed or p.speed.nil?
+            p.acceleration = p_prev.acceleration
+          else
+            p.speed = ds/dt if overwrite_speed or p.speed.nil?
+            dv = p.speed - p_prev.speed
+            p.acceleration = dv/dt
+          end
+        else
+          p.speed = p_prev.speed if overwrite_speed or p.speed.nil?
+          p.acceleration = nil
+        end
+
+        if p.has_location?
+          i_last_proper = i
+        end
+
+        p
+      end
+      nil
+    end
+
+    # Public: Recalculates the distance
+    #
+    # Examples
+    #   @route.recalculate_distance!
+    #
+    # Returns nil
+    def recalculate_distance!
+      total_distance = 0
+      @end_point = get_points[0]
+      @start_point = get_points[0]
+      @_total_distance = 0
+      @_total_ascent = 0
+      @_total_descent = 0
+
+      get_points.map! do |point|
+        process_elevation_delta(@end_point, point)
+        if distance = Maths.haversine_distance(@end_point, point)
+          @_total_distance += distance
+          @end_point = point
+        end
+
+        @total_time = point.time - @start_point.time if point.time
+
+        point
+      end
+      nil
     end
 
     private

@@ -2,7 +2,7 @@ require 'time'
 
 module Broutes
   class GeoPoint
-    attr_accessor :lat, :lon, :elevation, :distance, :heart_rate, :power, :speed, :cadence, :temperature
+    attr_accessor :lat, :lon, :elevation, :distance, :heart_rate, :power, :speed, :cadence, :temperature, :acceleration
     attr_reader :time
 
     def initialize(args={})
@@ -14,7 +14,7 @@ module Broutes
     end
 
     def has_location?
-      lat && lon
+      lat && lon && lat != 180.0 && lon != 180.0
     end
 
     def time=(value)
@@ -35,7 +35,8 @@ module Broutes
       power == other.power &&
       speed == other.speed &&
       cadence == other.cadence &&
-      temperature == other.temperature
+      temperature == other.temperature &&
+      acceleration == other.acceleration
     end
 
     def to_hash
@@ -50,6 +51,7 @@ module Broutes
       h['speed'] = speed if speed
       h['cadence'] = cadence if cadence
       h['temperature'] = temperature if temperature
+      h['acceleration'] = acceleration if acceleration
       h
     end
   end
