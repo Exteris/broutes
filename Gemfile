@@ -10,4 +10,6 @@ group :test, :development do
   gem 'rb-fsevent', :require => false
   gem 'guard'
   gem 'guard-rspec'
+
+  gem 'ruby-prof'
 end
