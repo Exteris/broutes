@@ -1,4 +1,6 @@
 module Broutes
+  require 'lowess'
+
   class GeoRoute
 
     attr_reader :start_point, :end_point, :started_at, :ended_at, :total_time
@@ -62,9 +64,50 @@ module Broutes
       process_elevation_delta(@end_point, point)
 
       if point.has_location?
+        if point.speed.nil? or point.speed.nan?
+          if point.time
+            point.speed = Maths.haversine_distance(@end_point, point) / (point.time - @end_point.time)
+          end
+        end
+      end
+
+      if point.has_location?
         @end_point = point
       end
       get_points << point
+    end
+
+    # See https://www.rdocumentation.org/packages/gplots/versions/3.0.1/topics/lowess
+    def smooth!(speed_params={}, hr_params={})
+      valid = -> p {not p.speed.nil? and not p.time.nil? and not p.speed.nan?}
+      valid_points = get_points.select &valid
+      if not valid_points.empty?
+        # Smooth the speed (if present)
+        lw_speed = Lowess::lowess(valid_points.map{|p| Lowess::Point.new(p.time, p.speed)}, **speed_params)
+        i=0
+        get_points.map! do |p|
+          if valid.call(p)
+            p.speed = lw_speed[i].y
+            i += 1
+          end
+          p
+        end
+      end
+
+      # smooth the hearthrate (if present)
+      valid = -> p {not p.heart_rate.nil? and not p.heart_rate.nan?}
+      valid_points = get_points.select &valid
+      if not valid_points.empty?
+        lw_hr = Lowess::lowess(valid_points.map{|p| Lowess::Point.new(p.time, p.heart_rate)}, **hr_params)
+        i=0
+        get_points.map! do |p|
+          if valid.call(p)
+            p.heart_rate = lw_hr[i].y
+            i += 1
+          end
+          p
+        end
+      end
     end
 
     def add_lap(args)

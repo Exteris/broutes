@@ -17,4 +17,5 @@ Gem::Specification.new do |s|
 
   s.add_dependency('nokogiri', '~> 1.5')
   s.add_dependency('garmin-fit', '~> 0.0.2')
+  s.add_dependency('lowess', '~> 1.0')
 end

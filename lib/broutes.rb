@@ -9,11 +9,12 @@ module Broutes
   RAD_PER_DEG = 0.017453293  #  PI/180
   EARTH_RADIUS = 6371000 #m
 
-  def self.from_file(file, format)
+  def self.from_file(file, format, speed_params={}, hr_params={})
     raise "unable to interpret format #{format}" unless processor = Formats::Factory.new.get(format)
     Broutes.logger.debug {"found processor #{processor} for #{file}"}
     route = GeoRoute.new
     processor.load(file, route)
+    route.smooth!(speed_params, hr_params)
     route
   end
 
