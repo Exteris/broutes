@@ -84,9 +84,9 @@ module Broutes
       point.distance = @total_distance
       process_elevation_delta(@end_point, point)
 
-      if point.has_location?
+      if point.has_location? and @end_point.has_location?
         if point.speed.nil? or point.speed.nan?
-          if point.time
+          if point.time and @end_point.time
             point.speed = Maths.haversine_distance(@end_point, point) / (point.time - @end_point.time)
           end
         end

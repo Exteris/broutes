@@ -22,12 +22,13 @@ def parse_dir(dirname)
     if (item.end_with?('.fit') or
         item.end_with?('.tcx') or
         item.end_with?('.gpx'))
+      puts item
       file = File.open(full_path)
       type = item.split('.')[-1].to_sym
       type = :gpx_track if type == :gpx
       route = Broutes.from_file(file, type)
       file.close
-      puts item, route.summary
+      puts route.summary
     elsif File.directory?(full_path)
       parse_dir(full_path)
     end
