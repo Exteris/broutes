@@ -24,6 +24,14 @@ module Broutes
         else
           send("#{key}=", value) if respond_to?("#{key}=")
         end
+      h = {
+        'total_distance' => total_distance,
+        'total_time' => total_time,
+        'total_ascent' => total_ascent,
+        'total_descent' => total_ascent,
+        'points' => points.collect { |p| p.to_hash },
+        'laps' => laps.collect { |l| l.to_hash }
+      }
       end
     end
 
@@ -44,6 +52,19 @@ module Broutes
       h['end_point'] = end_point.to_hash if end_point
       h['started_at'] = @started_at if @started_at
       h
+    end
+
+    def summary
+      h = {
+        'total_distance' => total_distance,
+        'total_time' => total_time,
+        'total_ascent' => total_ascent,
+        'total_descent' => total_ascent,
+        'average_heart_rate' => average_heart_rate,
+        'maximum_heart_rate' => maximum_heart_rate,
+        'average_power' => average_power,
+        'total_calories' => total_calories,
+      }
     end
 
     def add_point(args)
@@ -95,7 +116,7 @@ module Broutes
       end
 
       # smooth the hearthrate (if present)
-      valid = -> p {not p.heart_rate.nil? and not p.heart_rate.nan?}
+      valid = -> p {not p.heart_rate.nil? and (p.heart_rate.integer? or not p.heart_rate.nan?)}
       valid_points = get_points.select &valid
       if not valid_points.empty?
         lw_hr = Lowess::lowess(valid_points.map{|p| Lowess::Point.new(p.time, p.heart_rate)}, **hr_params)
