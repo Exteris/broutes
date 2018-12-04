@@ -6,12 +6,13 @@ task :default => :spec
 RSpec::Core::RakeTask.new
 
 task :parse, :input_file, :format do |t, args|
-  Broutes.logger.level = Logger::ERROR
+  Broutes.logger.level = Logger::DEBUG
   puts args
   file = File.open(args[:input_file])
   route = Broutes.from_file(file, args[:format].to_sym)
   file.close
   puts route.summary
+  puts route.to_hash
 end
 
 def parse_dir(dirname)

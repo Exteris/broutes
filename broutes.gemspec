@@ -15,8 +15,7 @@ Gem::Specification.new do |s|
   s.test_files    = Dir["spec/**/*"]
   s.require_paths = ["lib"]
 
-  s.add_dependency('nokogiri', '~> 1.5.9')
-  s.add_dependency('garmin-fit', '~> 0.0.2')
-  s.add_dependency('bindata', '~> 1.4.5')
+  s.add_dependency('nokogiri', '~> 1.5')
+  s.add_dependency('fit_parser', '~> 1.0')
   s.add_dependency('lowess', '~> 1.0')
 end
