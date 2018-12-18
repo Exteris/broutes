@@ -14,7 +14,7 @@ module Broutes::Formats
           data = { time: record_time(r) }
           data[:lat] = convert_position(pr.raw_position_lat) if pr.respond_to?(:raw_position_lat)
           data[:lon] = convert_position(pr.raw_position_long) if pr.respond_to?(:raw_position_long)
-          data[:elevation] = pr.raw_altitude if pr.respond_to?(:raw_altitude) and pr.raw_altitude.to_i != 65535
+          data[:elevation] = pr.raw_altitude.to_f if pr.respond_to?(:raw_altitude) and pr.raw_altitude.to_i != 65535
           [:distance, :heart_rate, :power, :speed, :cadence, :temperature].each do |m| 
             data[m] = pr.send("raw_#{m}").to_f if pr.respond_to?("raw_#{m}") and not [255, 65535].include?(pr.send("raw_#{m}").to_i)
           end

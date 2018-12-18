@@ -3,7 +3,7 @@ module Broutes
 
   class GeoRoute
 
-    attr_reader :start_point, :end_point, :started_at, :ended_at, :total_time
+    attr_reader :start_point, :end_point, :started_at, :ended_at
     attr_writer :total_distance, :started_at
     attr_accessor :total_time
 
