@@ -47,4 +47,22 @@ describe Broutes do
       expect(mean_speed).to be_between(ref_speed*0.85, ref_speed*1.15)
     end
   end
+
+  describe ".all_files" do
+    Dir.foreach('spec/support/') do |item|
+      next if item == '.' || item == '..'
+
+      if %w[fit tcx gpx].include? item.split('.').last
+        it "can read #{item}" do
+          @file = open_file(item)
+          @route = Broutes.from_file(@file, item)
+        end
+      else
+        it "cannot read #{item}" do
+          @file = open_file(item)
+          expect{@route = Broutes.from_file(@file, item)}.to raise_error(ArgumentError)
+        end
+      end
+    end
+  end
 end
