@@ -24,6 +24,9 @@ task :plot, :input_file, :format do |_t, args|
   route = Broutes.from_file(file, args[:format].to_sym)
   route.smooth_hr_endurance_sports!
   route.smooth_speed_rowing! 15.0
+  puts route.points.to_a.length
+  route.drop_n! 3
+  puts route.points.to_a.length
   file.close
   puts route.summary
 
@@ -46,9 +49,9 @@ task :plot, :input_file, :format do |_t, args|
       set ylabel: 'speed [km/h]'
       send "set y2label 'HR (bpm)'"
 
-      send "plot '#{f.path}' u 1:2 w lp t 'speed' axis x1y1, \
-                 '#{f.path}' u 1:3 w lp t 'HR' axis x1y2"
-      pause 30
+      send "plot '#{f.path}' u 1:2 w l t 'speed' axis x1y1, \
+                 '#{f.path}' u 1:3 w l t 'HR' axis x1y2"
+      pause 50
     end
   ensure
     f.close

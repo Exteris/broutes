@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'time'
 
 module Broutes
@@ -5,8 +7,8 @@ module Broutes
     attr_accessor :lat, :lon, :elevation, :distance, :heart_rate, :power, :speed, :cadence, :temperature
     attr_reader :time
 
-    def initialize(args={})
-      args.each_pair do |key, value| send("#{key}=", value) if respond_to?("#{key}=") end
+    def initialize(args = {})
+      args.each_pair { |key, value| send("#{key}=", value) if respond_to?("#{key}=") }
     end
 
     def self.from_hash(h)
@@ -17,25 +19,33 @@ module Broutes
       lat && lon
     end
 
+    def has_hr?
+      !heart_rate.nil? && (heart_rate.integer? || !heart_rate.nan?)
+    end
+
+    def has_speed?
+      !speed.nil? && !speed.nan?
+    end
+
     def time=(value)
-      if value.is_a?(String)
-        @time = DateTime.parse(value).to_time
-      else
-        @time = value
-      end
+      @time = if value.is_a?(String)
+                DateTime.parse(value).to_time
+              else
+                value
+              end
     end
 
     def ==(other)
       lat == other.lat &&
-      lon == other.lon &&
-      elevation == other.elevation &&
-      distance == other.distance &&
-      time == other.time &&
-      heart_rate == other.heart_rate &&
-      power == other.power &&
-      speed == other.speed &&
-      cadence == other.cadence &&
-      temperature == other.temperature
+        lon == other.lon &&
+        elevation == other.elevation &&
+        distance == other.distance &&
+        time == other.time &&
+        heart_rate == other.heart_rate &&
+        power == other.power &&
+        speed == other.speed &&
+        cadence == other.cadence &&
+        temperature == other.temperature
     end
 
     def to_hash

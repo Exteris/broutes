@@ -97,17 +97,16 @@ module Broutes
       get_points << point
     end
 
-    def smooth_hr_lowess!(params)
-      params[:delta] ||= 0
-
-      valid = ->(p) { !p.heart_rate.nil? && (p.heart_rate.integer? || !p.heart_rate.nan?) }
-      valid_points = get_points.select(&valid)
+    def smooth_hr_lowess!(factor:, iter:, delta: 0)
+      valid_points = get_points.select(&:has_hr?).map do |p|
+        Lowess::Point.new(p.time, p.heart_rate)
+      end
       return if valid_points.empty?
 
-      lw_hr = Lowess.lowess(valid_points.map { |p| Lowess::Point.new(p.time, p.heart_rate) }, **params)
+      lw_hr = Lowess.lowess(valid_points, f: factor, iter: iter, delta: delta)
       i = 0
       get_points.map! do |p|
-        if valid.call(p)
+        if p.has_hr?
           p.heart_rate = lw_hr[i].y
           i += 1
         end
@@ -115,17 +114,16 @@ module Broutes
       end
     end
 
-    def smooth_speed_lowess!(params)
-      params[:delta] ||= 0
-
-      valid = ->(p) { !p.speed.nil? && !p.time.nil? && !p.speed.nan? }
-      valid_points = get_points.select(&valid)
+    def smooth_speed_lowess!(factor:, iter:, delta: 0)
+      valid_points = get_points.select(&:has_speed?).map do |p|
+        Lowess::Point.new(p.time, p.speed)
+      end
       return if valid_points.empty?
 
-      lw_speed = Lowess.lowess(valid_points.map { |p| Lowess::Point.new(p.time, p.speed) }, **params)
+      lw_speed = Lowess.lowess(valid_points, f: factor, iter: iter, delta: delta)
       i = 0
       get_points.map! do |p|
-        if valid.call(p)
+        if p.has_speed?
           p.speed = lw_speed[i].y
           i += 1
         end
@@ -135,9 +133,9 @@ module Broutes
 
     # See https://www.rdocumentation.org/packages/gplots/versions/3.0.1/topics/lowess
     def smooth!(speed_params, hr_params)
-      smooth_speed_lowess! speed_params if speed_params != {}
+      smooth_speed_lowess!(**speed_params) if speed_params != {}
 
-      smooth_hr_lowess! hr_params if hr_params != {}
+      smooth_hr_lowess!(**hr_params) if hr_params != {}
     end
 
     # A custom HR smoothing method for man-powered endurance sports.
@@ -151,7 +149,7 @@ module Broutes
     # We thus calculate the factor f for a lowess smoothing based on the total
     # time and a fraction of 10 seconds.
     def smooth_hr_endurance_sports!(ref_time = 10.0)
-      smooth_hr_lowess! f: ref_time / total_time, iter: 4
+      smooth_hr_lowess! factor: ref_time / total_time, iter: 4
     end
 
     # A simple speed smoother for on-water rowing taking into account typical acceleration times
@@ -170,7 +168,43 @@ module Broutes
     # assume that for most endurance sports the speed is approximately linear
     # at 10-second timescales
     def smooth_speed_endurance_sports!(ref_time = 10.0)
-      smooth_speed_lowess! f: ref_time / total_time, iter: 4
+      smooth_speed_lowess! factor: ref_time / total_time, iter: 4
+    end
+
+    # simplify the path by dropping every n-th point
+    def drop_n!(n = 2)
+      @_points = @_points.values_at(*(0..@_points.length) % n)
+    end
+
+    # A simple heuristic to simplify a path
+    def simplify_path!(ref = 0.001, max_hr = 200, max_speed = 5) # speed in m/s
+      get_points.select!.with_index do |_p, i|
+        next if i.zero? || i == get_points.length - 1 # always keep last point
+
+        score = point_diff(*get_points.slice(i - 1, 3), :heart_rate) / max_hr +
+                point_diff(*get_points.slice(i - 1, 3), :speed) / max_speed
+
+        score > ref
+      end
+    end
+
+    # calculate the deviation from linearity between this point and the one before and after
+    # Formula: |y - ((t - t0) (y2 - y0) / (t2 - t0) + y0)|
+    def point_diff(p0, p, p2, method)
+      t0 = p0.time
+      t  = p.time
+      t2 = p2.time
+
+      y0 = p0.send method
+      y  = p.send method
+      y2 = p2.send method
+
+      # if missing no score
+      return 0 if y.nil?
+      # if one of the two around is missing return the whole point value so we select it for sure
+      return y if y0.nil? || y2.nil?
+
+      (y - ((t - t0) * (y2 - y0) / (t2 - t0) + y0)).abs
     end
 
     def add_lap(args)
