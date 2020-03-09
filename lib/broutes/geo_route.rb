@@ -177,10 +177,18 @@ module Broutes
       smooth_speed_lowess! factor: ref_time / total_time, iter: 4
     end
 
-    # simplify the path by dropping every n-th point
-    def drop_n!(n = 2)
-      @_points = @_points.values_at(*(0..@_points.length) % n)
+    # simplify the path by taking only every n-th point
+    def every_nth!(n = 2)
+      return self if n <= 1
+
+      @_points = @_points.values_at(*(0..@_points.length - 1) % n)
       self
+    end
+
+    # simplify the route by dropping until we get to around 1 value per n s
+    def drop_to_target_rate!(target_rate = 0.25)
+      rate = get_points.length / total_time
+      every_nth!((rate / target_rate).round.to_i)
     end
 
     # A simple heuristic to simplify a path

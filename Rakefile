@@ -24,7 +24,9 @@ task :plot, :input_file, :format do |_t, args|
   route = Broutes.from_file(file, args[:format].to_sym)
   route.smooth_hr_endurance_sports!
   route.smooth_speed_rowing! 20.0
-  # route.drop_n! 3
+  puts route.points.to_a.length
+  route.drop_to_target_rate! 0.20
+  puts route.points.to_a.length
   file.close
   puts route.summary
 
