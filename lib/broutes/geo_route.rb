@@ -101,7 +101,7 @@ module Broutes
       valid_points = get_points.select(&:has_hr?).map do |p|
         Lowess::Point.new(p.time, p.heart_rate)
       end
-      return if valid_points.empty?
+      return self if valid_points.empty?
 
       lw_hr = Lowess.lowess(valid_points, f: factor, iter: iter, delta: delta)
       i = 0
@@ -120,7 +120,7 @@ module Broutes
       valid_points = get_points.select(&:has_speed?).map do |p|
         Lowess::Point.new(p.time, p.speed)
       end
-      return if valid_points.empty?
+      return self if valid_points.empty?
 
       lw_speed = Lowess.lowess(valid_points, f: factor, iter: iter, delta: delta)
       i = 0
