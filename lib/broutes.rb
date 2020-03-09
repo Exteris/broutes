@@ -11,7 +11,7 @@ module Broutes
   RAD_PER_DEG = 0.017453293 #  PI/180
   EARTH_RADIUS = 6_371_000 # m
 
-  def self.from_file(file, format, speed_params = { f: 0.0015, iter: 4, delta: 0 }, hr_params = { f: 0.0015, iter: 4, delta: 0 })
+  def self.from_file(file, format, speed_params = {}, hr_params = {})
     raise "unable to interpret format #{format}" unless processor = Formats::Factory.new.get(format)
 
     Broutes.logger.debug { "found processor #{processor} for #{file}" }

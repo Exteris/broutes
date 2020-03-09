@@ -25,7 +25,7 @@ module Broutes
         else
           send("#{key}=", value) if respond_to?("#{key}=")
         end
-        h = {
+        {
           'total_distance' => total_distance,
           'total_time' => total_time,
           'total_ascent' => total_ascent,
@@ -37,7 +37,7 @@ module Broutes
     end
 
     def self.from_hash(h)
-      route = GeoRoute.new h
+      GeoRoute.new h
     end
 
     def to_hash
@@ -56,7 +56,7 @@ module Broutes
     end
 
     def summary
-      h = {
+      {
         'total_distance' => total_distance,
         'total_time' => total_time,
         'total_ascent' => total_ascent,
@@ -97,37 +97,80 @@ module Broutes
       get_points << point
     end
 
+    def smooth_hr_lowess!(params)
+      params[:delta] ||= 0
+
+      valid = ->(p) { !p.heart_rate.nil? && (p.heart_rate.integer? || !p.heart_rate.nan?) }
+      valid_points = get_points.select(&valid)
+      return if valid_points.empty?
+
+      lw_hr = Lowess.lowess(valid_points.map { |p| Lowess::Point.new(p.time, p.heart_rate) }, **params)
+      i = 0
+      get_points.map! do |p|
+        if valid.call(p)
+          p.heart_rate = lw_hr[i].y
+          i += 1
+        end
+        p
+      end
+    end
+
+    def smooth_speed_lowess!(params)
+      params[:delta] ||= 0
+
+      valid = ->(p) { !p.speed.nil? && !p.time.nil? && !p.speed.nan? }
+      valid_points = get_points.select(&valid)
+      return if valid_points.empty?
+
+      lw_speed = Lowess.lowess(valid_points.map { |p| Lowess::Point.new(p.time, p.speed) }, **params)
+      i = 0
+      get_points.map! do |p|
+        if valid.call(p)
+          p.speed = lw_speed[i].y
+          i += 1
+        end
+        p
+      end
+    end
+
     # See https://www.rdocumentation.org/packages/gplots/versions/3.0.1/topics/lowess
     def smooth!(speed_params, hr_params)
-      valid = ->(p) { !p.speed.nil? && !p.time.nil? && !p.speed.nan? }
-      valid_points = get_points.select &valid
-      unless valid_points.empty?
-        # Smooth the speed (if present)
-        lw_speed = Lowess.lowess(valid_points.map { |p| Lowess::Point.new(p.time, p.speed) }, **speed_params)
-        i = 0
-        get_points.map! do |p|
-          if valid.call(p)
-            p.speed = lw_speed[i].y
-            i += 1
-          end
-          p
-        end
-      end
+      smooth_speed_lowess! speed_params if speed_params != {}
 
-      # smooth the hearthrate (if present)
-      valid = ->(p) { !p.heart_rate.nil? && (p.heart_rate.integer? || !p.heart_rate.nan?) }
-      valid_points = get_points.select &valid
-      unless valid_points.empty?
-        lw_hr = Lowess.lowess(valid_points.map { |p| Lowess::Point.new(p.time, p.heart_rate) }, **hr_params)
-        i = 0
-        get_points.map! do |p|
-          if valid.call(p)
-            p.heart_rate = lw_hr[i].y
-            i += 1
-          end
-          p
-        end
-      end
+      smooth_hr_lowess! hr_params if hr_params != {}
+    end
+
+    # A custom HR smoothing method for man-powered endurance sports.
+    #
+    # We smooth the heart rate with a LOWESS filter with parameters chosen to
+    # match the maximum rate of rising heartrate on start of exercise and falling
+    # heartrate in rest periods.
+    # We there need a time scale which is used to compute linear fits, i.e. a
+    # time where a linear fit is a good approximation.
+    # Based on analysis of a set of HR traces this should be no more than 5 seconds.
+    # We thus calculate the factor f for a lowess smoothing based on the total
+    # time and a fraction of 10 seconds.
+    def smooth_hr_endurance_sports!(ref_time = 10.0)
+      smooth_hr_lowess! f: ref_time / total_time, iter: 4
+    end
+
+    # A simple speed smoother for on-water rowing taking into account typical acceleration times
+    # Stroke rates are between 10 and 30 strokes per minute. At the very least
+    # we need to average over several strokes to average out the front-and-aft
+    # motion of wrist-worn gps receivers.
+    # This means a minimum smoothing time of 15 seconds for 5 strokes at 20 SPM.
+    #
+    # (Ideally we would use the characteristics of a rowing
+    # boat (such as turn radius etc) to do Kalman filtering of the GPS coordinates
+    # and then calculate a new speed from this)
+    def smooth_speed_rowing!(ref_time = 15.0)
+      smooth_speed_endurance_sports! ref_time
+    end
+
+    # assume that for most endurance sports the speed is approximately linear
+    # at 10-second timescales
+    def smooth_speed_endurance_sports!(ref_time = 10.0)
+      smooth_speed_lowess! f: ref_time / total_time, iter: 4
     end
 
     def add_lap(args)
