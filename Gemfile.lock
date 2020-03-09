@@ -40,6 +40,7 @@ GEM
     minitest (5.12.2)
     nokogiri (1.10.4)
       mini_portile2 (~> 2.4.0)
+    numo-gnuplot (0.2.4)
     pry (0.9.10)
       coderay (~> 1.0.5)
       method_source (~> 0.8)
@@ -69,6 +70,7 @@ DEPENDENCIES
   broutes!
   guard
   guard-rspec
+  numo-gnuplot
   rake
   rb-fsevent
   rspec

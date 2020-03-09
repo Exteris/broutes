@@ -1,11 +1,13 @@
+# frozen_string_literal: true
+
 require 'rake'
 require 'rspec/core/rake_task'
 require_relative 'lib/broutes'
 
-task :default => :spec
+task default: :spec
 RSpec::Core::RakeTask.new
 
-task :parse, :input_file, :format do |t, args|
+task :parse, :input_file, :format do |_t, args|
   Broutes.logger.level = Logger::DEBUG
   puts args
   file = File.open(args[:input_file])
@@ -15,13 +17,52 @@ task :parse, :input_file, :format do |t, args|
   puts route.to_hash
 end
 
+task :plot, :input_file, :format do |_t, args|
+  Broutes.logger.level = Logger::DEBUG
+  puts args
+  file = File.open(args[:input_file])
+  route = Broutes.from_file(file, args[:format].to_sym)
+  file.close
+  puts route.summary
+
+  x = route.points.map { |p| p.time - route.started_at }
+  y1 = route.points.map { |p| p.speed ? p.speed * 3.6 : nil } # km/h
+  y2 = route.points.map(&:heart_rate)
+
+  require 'tempfile'
+  f = Tempfile.new ['gnuplot', '.tsv']
+  begin
+    f.write x.zip(y1, y2).map { |r| r.join "\t" }.join("\n")
+
+    require 'numo/gnuplot'
+    Numo.gnuplot do
+      debug_on
+      send 'set datafile separator "\t"'
+      set title: args[:input_file]
+      set :y2tics
+      set xlabel: 'time [s]'
+      set ylabel: 'speed [km/h]'
+      # send "set y1range [#{y1.compact.minmax.join(':')}]"
+      # send "set y2range [#{y2.compact.minmax.join(':')}]"
+      send "set y2label 'HR (bpm)'"
+
+      send "plot '#{f.path}' u 1:2 w lp t 'speed' axis x1y1, '#{f.path}' u 1:3 w lp t 'HR' axis x1y2"
+      pause 30
+    end
+  ensure
+    f.close
+    f.unlink
+  end
+end
+
 def parse_dir(dirname)
   Dir.foreach(dirname) do |item|
-    next if item == '.' or item == '..'
-    full_path = dirname+'/'+item
-    if (item.end_with?('.fit') or
-        item.end_with?('.tcx') or
-        item.end_with?('.gpx'))
+    next if (item == '.') || (item == '..')
+
+    full_path = dirname + '/' + item
+    if item.end_with?('.fit') ||
+       item.end_with?('.tcx') ||
+       item.end_with?('.gpx')
       puts item
       file = File.open(full_path)
       type = item.split('.')[-1].to_sym
@@ -36,7 +77,7 @@ def parse_dir(dirname)
 end
 
 # Recursively parse a directory of files
-task :parse_dir, :dirname do |t, args|
+task :parse_dir, :dirname do |_t, args|
   Broutes.logger.level = Logger::ERROR
   puts args
   parse_dir(args[:dirname])

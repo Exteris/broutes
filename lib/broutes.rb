@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Broutes
   require 'logger'
   require_relative 'broutes/geo_route'
@@ -6,12 +8,13 @@ module Broutes
   require_relative 'broutes/maths'
   require_relative 'broutes/formats'
 
-  RAD_PER_DEG = 0.017453293  #  PI/180
-  EARTH_RADIUS = 6371000 #m
+  RAD_PER_DEG = 0.017453293 #  PI/180
+  EARTH_RADIUS = 6_371_000 # m
 
-  def self.from_file(file, format, speed_params={}, hr_params={})
+  def self.from_file(file, format, speed_params = { f: 0.0015, iter: 4, delta: 0 }, hr_params = { f: 0.0015, iter: 4, delta: 0 })
     raise "unable to interpret format #{format}" unless processor = Formats::Factory.new.get(format)
-    Broutes.logger.debug {"found processor #{processor} for #{file}"}
+
+    Broutes.logger.debug { "found processor #{processor} for #{file}" }
     route = GeoRoute.new
     processor.load(file, route)
     route.smooth!(speed_params, hr_params)

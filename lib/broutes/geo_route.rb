@@ -1,8 +1,9 @@
+# frozen_string_literal: true
+
 module Broutes
   require 'lowess'
 
   class GeoRoute
-
     attr_reader :start_point, :end_point, :started_at, :ended_at
     attr_writer :total_distance, :started_at
     attr_accessor :total_time
@@ -15,7 +16,7 @@ module Broutes
       get_laps.to_enum
     end
 
-    def initialize(args={})
+    def initialize(args = {})
       args.each_pair do |key, value|
         if key.to_sym == :points
           value.each { |p| add_point(p) }
@@ -24,14 +25,14 @@ module Broutes
         else
           send("#{key}=", value) if respond_to?("#{key}=")
         end
-      h = {
-        'total_distance' => total_distance,
-        'total_time' => total_time,
-        'total_ascent' => total_ascent,
-        'total_descent' => total_ascent,
-        'points' => points.collect { |p| p.to_hash },
-        'laps' => laps.collect { |l| l.to_hash }
-      }
+        h = {
+          'total_distance' => total_distance,
+          'total_time' => total_time,
+          'total_ascent' => total_ascent,
+          'total_descent' => total_ascent,
+          'points' => points.collect(&:to_hash),
+          'laps' => laps.collect(&:to_hash)
+        }
       end
     end
 
@@ -45,8 +46,8 @@ module Broutes
         'total_time' => total_time,
         'total_ascent' => total_ascent,
         'total_descent' => total_ascent,
-        'points' => points.collect { |p| p.to_hash },
-        'laps' => laps.collect { |l| l.to_hash }
+        'points' => points.collect(&:to_hash),
+        'laps' => laps.collect(&:to_hash)
       }
       h['start_point'] = start_point.to_hash if start_point
       h['end_point'] = end_point.to_hash if end_point
@@ -63,7 +64,7 @@ module Broutes
         'average_heart_rate' => average_heart_rate,
         'maximum_heart_rate' => maximum_heart_rate,
         'average_power' => average_power,
-        'total_calories' => total_calories,
+        'total_calories' => total_calories
       }
     end
 
@@ -84,28 +85,26 @@ module Broutes
       point.distance = @total_distance
       process_elevation_delta(@end_point, point)
 
-      if point.has_location? and @end_point.has_location?
-        if point.speed.nil? or point.speed.nan?
-          if point.time and @end_point.time
+      if point.has_location? && @end_point.has_location?
+        if point.speed.nil? || point.speed.nan?
+          if point.time && @end_point.time
             point.speed = Maths.haversine_distance(@end_point, point) / (point.time - @end_point.time)
           end
         end
       end
 
-      if point.has_location?
-        @end_point = point
-      end
+      @end_point = point if point.has_location?
       get_points << point
     end
 
     # See https://www.rdocumentation.org/packages/gplots/versions/3.0.1/topics/lowess
-    def smooth!(speed_params={}, hr_params={})
-      valid = -> p {not p.speed.nil? and not p.time.nil? and not p.speed.nan?}
+    def smooth!(speed_params, hr_params)
+      valid = ->(p) { !p.speed.nil? && !p.time.nil? && !p.speed.nan? }
       valid_points = get_points.select &valid
-      if not valid_points.empty?
+      unless valid_points.empty?
         # Smooth the speed (if present)
-        lw_speed = Lowess::lowess(valid_points.map{|p| Lowess::Point.new(p.time, p.speed)}, **speed_params)
-        i=0
+        lw_speed = Lowess.lowess(valid_points.map { |p| Lowess::Point.new(p.time, p.speed) }, **speed_params)
+        i = 0
         get_points.map! do |p|
           if valid.call(p)
             p.speed = lw_speed[i].y
@@ -116,11 +115,11 @@ module Broutes
       end
 
       # smooth the hearthrate (if present)
-      valid = -> p {not p.heart_rate.nil? and (p.heart_rate.integer? or not p.heart_rate.nan?)}
+      valid = ->(p) { !p.heart_rate.nil? && (p.heart_rate.integer? || !p.heart_rate.nan?) }
       valid_points = get_points.select &valid
-      if not valid_points.empty?
-        lw_hr = Lowess::lowess(valid_points.map{|p| Lowess::Point.new(p.time, p.heart_rate)}, **hr_params)
-        i=0
+      unless valid_points.empty?
+        lw_hr = Lowess.lowess(valid_points.map { |p| Lowess::Point.new(p.time, p.heart_rate) }, **hr_params)
+        i = 0
         get_points.map! do |p|
           if valid.call(p)
             p.heart_rate = lw_hr[i].y
@@ -138,18 +137,19 @@ module Broutes
     def process_elevation_delta(last_point, new_point)
       if last_point && new_point && last_point.elevation && new_point.elevation
         delta = new_point.elevation - last_point.elevation
-        @_total_ascent = self.total_ascent + (delta > 0 ? delta : 0)
-        @_total_descent = self.total_descent - (delta < 0 ? delta : 0)
+        @_total_ascent = total_ascent + (delta > 0 ? delta : 0)
+        @_total_descent = total_descent - (delta < 0 ? delta : 0)
       end
     end
 
     def started_at
       return @started_at if @started_at
-      @start_point.time if @start_point
+
+      @start_point&.time
     end
 
     def ended_at
-      @end_point.time if @end_point
+      @end_point&.time
     end
 
     def total_ascent
@@ -164,14 +164,14 @@ module Broutes
     #
     # Returns Float distance in m
     def total_distance
-      @total_distance.round if @total_distance
+      @total_distance&.round
     end
 
     # Public : Measure of how hilly the route is. Measured as total ascent (m) / distance (km)
     #
     # Returns Float measure
     def hilliness
-      (total_distance > 0) ? (total_ascent * 1000 / total_distance) : 0
+      total_distance > 0 ? (total_ascent * 1000 / total_distance) : 0
     end
 
     # Public: Get average heart_rate for whole GeoRoute.
@@ -207,7 +207,7 @@ module Broutes
     # Returns Float maximum, or 0.0 if no speed on points.
     def maximum_speed
       points = @_points
-      points.map { |p| p.speed }.compact.max || 0.0
+      points.map(&:speed).compact.max || 0.0
     end
 
     # Public: Get minimum speed for whole GeoRoute.
@@ -219,7 +219,7 @@ module Broutes
     # Returns Float minimum, or 0.0 if no speed on points.
     def minimum_speed
       points = @_points
-      points.map { |p| p.speed }.compact.min || 0.0
+      points.map(&:speed).compact.min || 0.0
     end
 
     # Public: Get average speed for whole GeoRoute.
@@ -243,7 +243,7 @@ module Broutes
     # Returns Integer maximum, or 0 if no heart rate on points.
     def maximum_heart_rate
       points = @_points
-      points.map { |p| p.heart_rate }.compact.max || 0
+      points.map(&:heart_rate).compact.max || 0
     end
 
     # Public: Get minimum heart rate for whole GeoRoute.
@@ -255,7 +255,7 @@ module Broutes
     # Returns Integer minimum, or 0 if no heart rate on points.
     def minimum_heart_rate
       points = @_points
-      points.map { |p| p.heart_rate }.compact.min || 0
+      points.map(&:heart_rate).compact.min || 0
     end
 
     # Public: Get maximum elevation for whole GeoRoute.
@@ -267,7 +267,7 @@ module Broutes
     # Returns Integer maximum, or 0 if no elevation on points.
     def maximum_elevation
       points = @_points
-      points.map { |p| p.elevation }.compact.max || 0
+      points.map(&:elevation).compact.max || 0
     end
 
     # Public: Get minimum elevation for whole GeoRoute.
@@ -279,7 +279,7 @@ module Broutes
     # Returns Integer minimum, or 0 if no elevation on points.
     def minimum_elevation
       points = @_points
-      points.map { |p| p.elevation }.compact.min || 0
+      points.map(&:elevation).compact.min || 0
     end
 
     # Public: Get total calories for whole GeoRoute.
@@ -290,7 +290,7 @@ module Broutes
     #
     # Returns Integer calories, 0 if no calories on laps or no laps on the route.
     def total_calories
-      laps.map { |l| l.calories }.inject { |sum, l| sum + l } || 0
+      laps.map(&:calories).inject { |sum, l| sum + l } || 0
     end
 
     private
