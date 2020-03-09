@@ -23,10 +23,8 @@ task :plot, :input_file, :format do |_t, args|
   file = File.open(args[:input_file])
   route = Broutes.from_file(file, args[:format].to_sym)
   route.smooth_hr_endurance_sports!
-  route.smooth_speed_rowing! 15.0
-  puts route.points.to_a.length
-  route.drop_n! 3
-  puts route.points.to_a.length
+  route.smooth_speed_rowing! 20.0
+  # route.drop_n! 3
   file.close
   puts route.summary
 

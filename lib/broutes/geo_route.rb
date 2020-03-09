@@ -112,6 +112,8 @@ module Broutes
         end
         p
       end
+
+      self
     end
 
     def smooth_speed_lowess!(factor:, iter:, delta: 0)
@@ -129,6 +131,8 @@ module Broutes
         end
         p
       end
+
+      self
     end
 
     # See https://www.rdocumentation.org/packages/gplots/versions/3.0.1/topics/lowess
@@ -136,6 +140,8 @@ module Broutes
       smooth_speed_lowess!(**speed_params) if speed_params != {}
 
       smooth_hr_lowess!(**hr_params) if hr_params != {}
+
+      self
     end
 
     # A custom HR smoothing method for man-powered endurance sports.
@@ -174,6 +180,7 @@ module Broutes
     # simplify the path by dropping every n-th point
     def drop_n!(n = 2)
       @_points = @_points.values_at(*(0..@_points.length) % n)
+      self
     end
 
     # A simple heuristic to simplify a path
