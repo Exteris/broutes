@@ -4,6 +4,7 @@ require 'json'
 require 'rake'
 require 'rspec/core/rake_task'
 require_relative 'lib/broutes'
+require 'tempfile'
 
 task default: :spec
 RSpec::Core::RakeTask.new
@@ -35,6 +36,13 @@ task :plot, :input_file, :format do |_t, args|
   puts args
   file = File.open(args[:input_file])
   route = Broutes.from_file(file, args[:format].to_sym)
+
+  x = route.points.map { |p| p.time - route.started_at }
+  y1 = route.points.map { |p| p.speed ? p.speed * 3.6 : nil } # km/h
+  y2 = route.points.map(&:heart_rate)
+  f1 = Tempfile.new ['gnuplot', '.tsv']
+  f1.write x.zip(y1, y2).map { |r| r.join "\t" }.join("\n")
+
   route.smooth_hr_endurance_sports!
   route.smooth_speed_rowing! 20.0
   puts route.points.to_a.length
@@ -47,11 +55,9 @@ task :plot, :input_file, :format do |_t, args|
   y1 = route.points.map { |p| p.speed ? p.speed * 3.6 : nil } # km/h
   y2 = route.points.map(&:heart_rate)
 
-  require 'tempfile'
-  f = Tempfile.new ['gnuplot', '.tsv']
+  f2 = Tempfile.new ['gnuplot', '.tsv']
+  f2.write x.zip(y1, y2).map { |r| r.join "\t" }.join("\n")
   begin
-    f.write x.zip(y1, y2).map { |r| r.join "\t" }.join("\n")
-
     require 'numo/gnuplot'
     Numo.gnuplot do
       debug_on
@@ -62,13 +68,17 @@ task :plot, :input_file, :format do |_t, args|
       set ylabel: 'speed [km/h]'
       send "set y2label 'HR (bpm)'"
 
-      send "plot '#{f.path}' u 1:2 w l t 'speed' axis x1y1, \
-                 '#{f.path}' u 1:3 w l t 'HR' axis x1y2"
-      pause 50
+      send "plot '#{f1.path}' u 1:2 w l t 'speed orig' axis x1y1, \
+                 '#{f1.path}' u 1:3 w l t 'HR orig' axis x1y2, \
+                 '#{f2.path}' u 1:2 w lp t 'speed' axis x1y1, \
+                 '#{f2.path}' u 1:3 w lp t 'HR' axis x1y2"
+      pause 150
     end
   ensure
-    f.close
-    f.unlink
+    f1.close
+    f1.unlink
+    f2.close
+    f2.unlink
   end
 end
 
