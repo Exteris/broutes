@@ -73,10 +73,48 @@ def f_motion(x, dt):
                   [0, 0,  0, 0,  0,  1]])
     return np.dot(F, x)
 
+def project_constrained_rowing_motion(x):
+    """
+    constraints imposed:
+    0 < |a| < 0.5 m/s^2 (~ 0.05 g)
+    0 < |v| < 8 m/s (~ 28.8 km/h)
+    0 < R < 2/3 Hz (40 strokes per minute)
+    Constrain the stroke rate with the speed as from
+    http://www.biorow.com/Papers_files/2000RaceRate.pdf
+
+    -pi < phi < pi
+    """
+    x, v_x, a_x, y, v_y, a_y, phi, R = x
+
+    v_norm = max(np.sqrt(v_x**2 + v_y**2), 1e-8)
+    if v_norm > 8:
+        v_x = v_x / v_norm * 8
+        v_y = v_y / v_norm * 8
+
+    a_norm = max(np.sqrt(a_x**2 + a_y**2), 1e-8)
+    if a_norm > 0.5:
+        a_x = a_x / a_norm * 0.5
+        a_y = a_y / a_norm * 0.5
+
+    phi = normalize_angle(phi)
+
+    def fit_rate_olympics(v):
+        """See equation 1 in http://www.biorow.com/Papers_files/2000RaceRate.pdf.
+        This is in strokes per minute, convert to Hz"""
+        return (-0.603813*v*v + 10.397554*v)/60*2*np.pi
+
+    R_min = max(0, fit_rate_olympics(v_norm)*0.8)
+    R_max = min(fit_rate_olympics(v_norm)*1.2, 0.66 * 2 * np.pi)
+    print(np.asarray([v_norm, R_min*60/(2*np.pi), R*60/(2*np.pi), R_max*60/(2*np.pi)]))
+    R = np.clip(R, R_min, R_max)
+
+    return np.asarray([x, v_x, a_x, y, v_y, a_y, phi, R])
+
+
 def f_rowing_motion(x_in, dt):
     """State transition function for rowing motion for wrist-worn gps receivers.
 
-    We have additional variables phi and R here, with a model for an additional velocity
+    We have additional variables phi and omega here, with a model for an additional velocity
     perturbation (outside of the acceleration term) in the current direction of motion.
 
     X is then interpreted as the position of the gps receiver on the athlete wrist,
@@ -85,38 +123,14 @@ def f_rowing_motion(x_in, dt):
 
     Extra equations:
     x_o = x_in + ... + v/|v| * l * cos(phi)
-    phi = 2 * pi * R * dt
-    l = l
-    R = R
-
-    constraints imposed:
-    0 < |a| < 0.5 m/s^2 (~ 0.05 g)
-    0 < |v| < 8 m/s (~ 28.8 km/h)
-    0 < R < 2/3 Hz (40 strokes per minute)
-    0 < phi
-    0 < l < 2 m
-
-
+    phi = omega * dt
     """
-    x, v_x, a_x, y, v_y, a_y, phi, R = x_in
+    x, v_x, a_x, y, v_y, a_y, phi, omega = x_in
 
     l = 1.5
-
     v_norm = max(np.sqrt(v_x**2 + v_y**2), 1e-8)
-    if v_norm > 8 and False: # m/s
-        v_x = v_x / v_norm * 8
-        v_y = v_y / v_norm * 8
 
-    a_norm = max(np.sqrt(a_x**2 + a_y**2), 1e-8)
-    if a_norm > 0.5 and False:
-        a_x = a_x / a_norm * 0.5
-        a_y = a_y / a_norm * 0.5
-
-
-    #l = np.clip(l, 0, 2)
-    #R = np.clip(R, 1e-8, 2./3.)
-
-    phi_o = phi + 2 * np.pi * R * dt
+    phi_o = phi + omega * dt
 
     x_o   = x + v_x * dt + 0.5 * a_x * dt**2 \
           + v_x/v_norm * l * (np.cos(phi_o) - np.cos(phi))
@@ -126,9 +140,9 @@ def f_rowing_motion(x_in, dt):
           + v_y/v_norm * l * (np.cos(phi_o) - np.cos(phi))
     v_y_o = v_y + a_y * dt
     a_y_o = a_y
-    R_o = R
+    omega_o = omega
 
-    return np.asarray([x_o, v_x_o, a_x_o, y_o, v_y_o, a_y_o, phi_o, R_o])
+    return np.asarray([x_o, v_x_o, a_x_o, y_o, v_y_o, a_y_o, phi_o, omega_o])
 
 def normalize_angle(x):
     x = x % (2 * np.pi)    # force in range [0, 2 pi)
@@ -207,7 +221,7 @@ def batch_ukf_rowing_motion(times, zs, i_start=0, i_len=None, batch=True):
     ukf.R = np.diag([gps_std**2, gps_std**2]) # no cross-correlation in GPS errors
     ukf.Q[0:3, 0:3] = Q_discrete_white_noise(3, dt=dt, var=0.2**2) # m/s^2
     ukf.Q[3:6, 3:6] = Q_discrete_white_noise(3, dt=dt, var=0.2**2) # m/s^2
-    ukf.Q[6:8, 6:8] = Q_discrete_white_noise(2, dt=dt, var=0.01**2) # radians / s change
+    ukf.Q[6:8, 6:8] = Q_discrete_white_noise(2, dt=dt, var=0.209**2) # radians / s (2 spm / 60 seconds/m * 2 * pi)
     # Add a covariance from phase to position
     #ukf.Q[0,6] = 0.5**2
     #ukf.Q[6,0] = 0.5**2
@@ -224,6 +238,7 @@ def batch_ukf_rowing_motion(times, zs, i_start=0, i_len=None, batch=True):
                 ukf.P = nearestPD(ukf.P)
             ukf.predict()
             ukf.update(z)
+            ukf.x = project_constrained_rowing_motion(ukf.x) # constrain state
             uxs.append(ukf.x)
             ps.append(ukf.P)
         uxs = np.asarray(uxs)
@@ -269,16 +284,18 @@ def batch_ukf_rowing_motion(times, zs, i_start=0, i_len=None, batch=True):
     # phi
     ax[6].plot(times[sel], uxs[:, 6])
     ax[6].set_ylabel('phi [rad]')
+    ax[6].set_ylim(-np.pi, np.pi)
     # R
-    ax[7].plot(times[sel], uxs[:, 7] * 60)
+    ax[7].plot(times[sel], uxs[:, 7] * 60 / (2*np.pi))
     ax[7].set_ylabel('Rate [spm]')
+    ax[7].set_ylim(0, 40)
 
     # Plot variances
     for i in range(1, 8):
         if i != 3 and i != 7:
             ax[i].fill_between(times[sel], uxs[:, i] - np.sqrt(ps[:, i,i]), uxs[:, i] + np.sqrt(ps[:, i,i]), alpha=0.3)
         if i == 7:
-            ax[i].fill_between(times[sel], uxs[:, i] * 60 - np.sqrt(ps[:, i,i])*60, uxs[:, i]*60 + np.sqrt(ps[:, i,i])*60, alpha=0.3)
+            ax[i].fill_between(times[sel], uxs[:, i] * 60/(2*np.pi) - np.sqrt(ps[:, i,i])*60/(2*np.pi), uxs[:, i]*60/(2*np.pi) + np.sqrt(ps[:, i,i])*60/(2*np.pi), alpha=0.3)
 
     plt.show()
 
@@ -306,6 +323,20 @@ def haversine_distance(lat1, lat2, lon1, lon2):
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
 
     return EARTH_RADIUS * c
+
+def rowing_rate(locations):
+    """Plot a DFT of the velocity to try and obtain the rowing rate"""
+    # fourier analysis
+
+    v = norm(np.diff(locations, axis=0), ord=2, axis=1)
+    v = v - np.mean(v)
+
+    spectrum = np.fft.fft(v)
+    freq = np.fft.fftfreq(v.shape[-1]) * 60
+    plt.plot(freq, np.abs(spectrum)**2)
+    plt.ylim(0,500)
+    plt.show()
+
 
 
 from numpy import linalg as la
@@ -359,4 +390,5 @@ def isPD(B):
 
 if __name__ == '__main__':
     times, points = read_data(sys.argv[1])
+    #rowing_rate(points[3100:3300,:])
     batch_ukf_rowing_motion(times, points, i_start=3100, i_len=300, batch=False)
