@@ -20,6 +20,7 @@ import sys
 import json
 from datetime import datetime
 import numpy as np
+np.set_printoptions(precision=1)
 from numpy.linalg import norm
 
 import matplotlib.pyplot as plt
@@ -38,7 +39,8 @@ def read_data(filename):
     locations = np.asarray([(p['lat'], p['lon']) for p in gps_data['points'] if has_gps(p)])
 
     # Convert the locations to 'meters' by multiplying with the right constant
-    return times, locations * 111111
+    # and subtracting the start point
+    return times, locations * 111111 - locations[0,[0,1]] * 111111
 
 def parse_time(s):
     """Parse the time as printed by Ruby"""
@@ -89,7 +91,7 @@ def f_rowing_motion(x_in, dt):
 
     constraints imposed:
     0 < |a| < 0.5 m/s^2 (~ 0.05 g)
-    0 < |v| < 7 m/s (~ 25 km/h)
+    0 < |v| < 8 m/s (~ 28.8 km/h)
     0 < R < 2/3 Hz (40 strokes per minute)
     0 < phi
     0 < l < 2 m
@@ -101,9 +103,9 @@ def f_rowing_motion(x_in, dt):
     l = 1.5
 
     v_norm = max(np.sqrt(v_x**2 + v_y**2), 1e-8)
-    if v_norm > 7 and False: # m/s
-        v_x = v_x / v_norm * 7
-        v_y = v_y / v_norm * 7
+    if v_norm > 8 and False: # m/s
+        v_x = v_x / v_norm * 8
+        v_y = v_y / v_norm * 8
 
     a_norm = max(np.sqrt(a_x**2 + a_y**2), 1e-8)
     if a_norm > 0.5 and False:
@@ -127,6 +129,31 @@ def f_rowing_motion(x_in, dt):
     R_o = R
 
     return np.asarray([x_o, v_x_o, a_x_o, y_o, v_y_o, a_y_o, phi_o, R_o])
+
+def normalize_angle(x):
+    x = x % (2 * np.pi)    # force in range [0, 2 pi)
+    if x > np.pi:          # move to [-pi, pi)
+        x -= 2 * np.pi
+    return x
+
+def residual_x(a, b):
+    """Calculate a residual after normalizing angle"""
+    y = a - b
+    y[6] = normalize_angle(y[6])
+    return y
+
+
+def rowing_motion_state_mean(sigmas, Wm):
+    x = np.zeros(8)
+
+    sum_sin = np.sum(np.dot(np.sin(sigmas[:, 6]), Wm))
+    sum_cos = np.sum(np.dot(np.cos(sigmas[:, 6]), Wm))
+    for i in range(6):
+        x[i] = np.sum(np.dot(sigmas[:, i], Wm))
+    x[6] = np.arctan2(sum_sin, sum_cos)
+    x[7] = np.sum(np.dot(sigmas[:, 7], Wm))
+    return x
+
 
 def h_gps(x):
     """Just return the GPS coordinates as measurement function"""
@@ -162,29 +189,45 @@ def batch_ukf_motion(times, zs):
     plt.plot(times[1:][sel], distances[sel]/dt, 'o', markersize=2)
     plt.show()
 
-def batch_ukf_rowing_motion(times, zs):
+def batch_ukf_rowing_motion(times, zs, i_start=0, i_len=None, batch=True):
     """Calculate a batch process UKF for the rowing motion case"""
-    sel = np.s_[3100:3400]
+    if i_len:
+        sel = np.s_[i_start:i_start+i_len]
+    else:
+        sel = np.s_[i_start:]
 
     points = MerweScaledSigmaPoints(n=8, alpha=.1, beta=2., kappa=-5)
     dt = times[1] - times[0] # assumed constant!
-    ukf = UKF(dim_x=8, dim_z=2, fx=f_rowing_motion, hx=h_gps, dt=dt, points=points)
+    ukf = UKF(dim_x=8, dim_z=2, fx=f_rowing_motion, hx=h_gps,
+              x_mean_fn=rowing_motion_state_mean, dt=dt, points=points,
+              residual_x=residual_x)
 
     ukf.x = np.array([zs[sel, 0][0], 0., 0., zs[sel, 1][0], 0., 0., 0., 0.])
-    # assume a 3 meter gps accuracy
-    # no cross-correlation in GPS errors
-    gps_std = 4 # meters
-    ukf.R = np.diag([gps_std**2, gps_std**2])
-    ukf.Q[0:3, 0:3] = Q_discrete_white_noise(3, dt=dt, var=1**2) # meters
-    ukf.Q[3:6, 3:6] = Q_discrete_white_noise(3, dt=dt, var=1**2) # meters
-    ukf.Q[6:8, 6:8] = Q_discrete_white_noise(2, dt=dt, var=0.5**2) # radians
+    gps_std = 1 # meters
+    ukf.R = np.diag([gps_std**2, gps_std**2]) # no cross-correlation in GPS errors
+    ukf.Q[0:3, 0:3] = Q_discrete_white_noise(3, dt=dt, var=0.2**2) # m/s^2
+    ukf.Q[3:6, 3:6] = Q_discrete_white_noise(3, dt=dt, var=0.2**2) # m/s^2
+    ukf.Q[6:8, 6:8] = Q_discrete_white_noise(2, dt=dt, var=0.01**2) # radians / s change
     # Add a covariance from phase to position
-    ukf.Q[0,6] = 0.5**2
-    ukf.Q[6,0] = 0.5**2
+    #ukf.Q[0,6] = 0.5**2
+    #ukf.Q[6,0] = 0.5**2
 
-    Xs, Ps = ukf.batch_filter(zs[sel])
-    Ms, P, K = ukf.rts_smoother(Xs, Ps)
-    uxs = np.array(Ms)
+    if batch:
+        Xs, Ps = ukf.batch_filter(zs[sel])
+        Ms, P, K = ukf.rts_smoother(Xs, Ps)
+        uxs = np.array(Ms)
+    else:
+        uxs = []
+        ps = []
+        for z in zs[sel]:
+            if not isPD(ukf.P):
+                ukf.P = nearestPD(ukf.P)
+            ukf.predict()
+            ukf.update(z)
+            uxs.append(ukf.x)
+            ps.append(ukf.P)
+        uxs = np.asarray(uxs)
+        ps = np.asarray(ps)
 
     fig, ax = plt.subplots(8, 1, sharex=True, gridspec_kw={'hspace': 0})
     ax[-1].set_xlabel('Time [s]')
@@ -230,6 +273,13 @@ def batch_ukf_rowing_motion(times, zs):
     ax[7].plot(times[sel], uxs[:, 7] * 60)
     ax[7].set_ylabel('Rate [spm]')
 
+    # Plot variances
+    for i in range(1, 8):
+        if i != 3 and i != 7:
+            ax[i].fill_between(times[sel], uxs[:, i] - np.sqrt(ps[:, i,i]), uxs[:, i] + np.sqrt(ps[:, i,i]), alpha=0.3)
+        if i == 7:
+            ax[i].fill_between(times[sel], uxs[:, i] * 60 - np.sqrt(ps[:, i,i])*60, uxs[:, i]*60 + np.sqrt(ps[:, i,i])*60, alpha=0.3)
+
     plt.show()
 
 def l2_distance(x1, x2, y1, y2):
@@ -257,6 +307,56 @@ def haversine_distance(lat1, lat2, lon1, lon2):
 
     return EARTH_RADIUS * c
 
+
+from numpy import linalg as la
+def nearestPD(A):
+    """Find the nearest positive-definite matrix to input
+    A Python/Numpy port of John D'Errico's `nearestSPD` MATLAB code [1], which
+    credits [2].
+    [1] https://www.mathworks.com/matlabcentral/fileexchange/42885-nearestspd
+    [2] N.J. Higham, "Computing a nearest symmetric positive semidefinite
+    matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
+    """
+
+    B = (A + A.T) / 2
+    _, s, V = la.svd(B)
+
+    H = np.dot(V.T, np.dot(np.diag(s), V))
+
+    A2 = (B + H) / 2
+
+    A3 = (A2 + A2.T) / 2
+
+    if isPD(A3):
+        return A3
+
+    spacing = np.spacing(la.norm(A))
+    # The above is different from [1]. It appears that MATLAB's `chol` Cholesky
+    # decomposition will accept matrixes with exactly 0-eigenvalue, whereas
+    # Numpy's will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
+    # for `np.spacing`), we use the above definition. CAVEAT: our `spacing`
+    # will be much larger than [1]'s `eps(mineig)`, since `mineig` is usually on
+    # the order of 1e-16, and `eps(1e-16)` is on the order of 1e-34, whereas
+    # `spacing` will, for Gaussian random matrixes of small dimension, be on
+    # othe order of 1e-16. In practice, both ways converge, as the unit test
+    # below suggests.
+    I = np.eye(A.shape[0])
+    k = 1
+    while not isPD(A3):
+        mineig = np.min(np.real(la.eigvals(A3)))
+        A3 += I * (-mineig * k**2 + spacing)
+        k += 1
+
+    return A3
+
+def isPD(B):
+    """Returns true when input is positive-definite, via Cholesky"""
+    try:
+        _ = la.cholesky(B)
+        return True
+    except la.LinAlgError:
+        return False
+
 if __name__ == '__main__':
     times, points = read_data(sys.argv[1])
-    batch_ukf_rowing_motion(times, points)
+    batch_ukf_rowing_motion(times, points, i_start=3100, i_len=300, batch=False)
